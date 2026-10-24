@@ -31,7 +31,7 @@ else vim.fn.writefile({vim.json.encode(fixture)}, old .. '/breakpoints.json') en
 local bp
 check('standalone require', function() bp = require('breakpoints'); assert(not package.loaded.dap) end)
 check(failing and 'copy failure one notice' or 'one-time copy under setup', function()
-  bp.setup()
+  vim.cmd("runtime plugin/breakpoints.lua")
   if failing then
     eq(#notices, 1); assert(notices[1]:find('copy',1,true)); bp.setup(); eq(#notices,1)
   else
@@ -94,12 +94,26 @@ check('F3 create remove convert and combo refusal',function()
   for _,answer in ipairs({'',false}) do vim.ui.input=function(_,cb) cb(answer or nil) end; key('<F3>'); eq(#bp.get(path),0) end
   vim.ui.input=input
 end)
+check('sign options reapply after auto setup without duplicate hooks',function()
+  assert(vim.g.loaded_breakpoints)
+  bp.toggle(path,1); bp.toggle(path,2,{log_message='a'})
+  local hooks=#vim.api.nvim_get_autocmds({group='BreakpointsStore'})
+  bp.setup({signs={breakpoint={text='■',color='#123456'},log_point={text='◇',color='WarningMsg'},muted={color='#abcdef'}}})
+  local marks=require('breakpoints.breakpoints.bp_marks').list(buf)
+  eq(marks[1].text,'■'); eq(marks[2].text,'◇')
+  eq(vim.api.nvim_get_hl(0,{name='BreakpointsBreakpoint'}).fg,0x123456)
+  eq(vim.api.nvim_get_hl(0,{name='BreakpointsLogPoint'}).link,'WarningMsg')
+  eq(vim.api.nvim_get_hl(0,{name='BreakpointsMuted'}).fg,0xabcdef)
+  eq(#vim.api.nvim_get_autocmds({group='BreakpointsStore'}),hooks)
+  bp.setup({signs={breakpoint={text='●',color='DiagnosticError'},log_point={text='◆',color='DiagnosticError'},muted={color='Comment'}}})
+  bp.clear(path)
+end)
 check('clear both kinds and linked highlights',function()
   bp.toggle(path,1); bp.toggle(path,2,{log_message='a'})
   local marks=require('breakpoints.breakpoints.bp_marks').list(buf)
-  eq(marks[1].text,'●'); eq(marks[2].text,'●')
+  eq(marks[1].text,'●'); eq(marks[2].text,'◆')
   eq(marks[1].hl,'BreakpointsBreakpoint'); eq(marks[2].hl,'BreakpointsLogPoint')
-  for name,target in pairs({BreakpointsBreakpoint='DiagnosticError',BreakpointsLogPoint='Function',BreakpointsMuted='Comment'}) do eq(vim.api.nvim_get_hl(0,{name=name}).link,target) end
+  for name,target in pairs({BreakpointsBreakpoint='DiagnosticError',BreakpointsLogPoint='DiagnosticError',BreakpointsMuted='Comment'}) do eq(vim.api.nvim_get_hl(0,{name=name}).link,target) end
   key('<S-F2>'); eq(#bp.get(path),0)
   bp.toggle(path,1); key('<F14>'); eq(#bp.get(path),0)
 end)
@@ -165,7 +179,7 @@ check('attached validation uses folder language and host style',function()
   local focused=0
   bp.attach({
     validate=function(language,props) eq(language,'cpp'); if props.condition=='refuse' then return 'host refusal' end end,
-    style=function(source) if source==cfile then return {text='●',hl='BreakpointsMuted',note='host note'} end end,
+    style=function(source) if source==cfile then return {hl='BreakpointsMuted',note='host note'} end end,
     focus_list=function() focused=focused+1 end,
   })
   vim.cmd.edit(cfile); bp.toggle(cfile,1); local id=bp.get(cfile)[1].id
@@ -173,6 +187,9 @@ check('attached validation uses folder language and host style',function()
   assert(bp.update(id,{condition='x>1'})); bp.redraw()
   eq(require('breakpoints.breakpoints.bp_marks').list(vim.api.nvim_get_current_buf())[1].hl,'BreakpointsMuted')
   assert(vim.tbl_contains(bp.describe(vim.api.nvim_get_current_buf(),1),'host note'))
+  assert(bp.update(id,{log_message='value'}))
+  local mark=require('breakpoints.breakpoints.bp_marks').list(vim.api.nvim_get_current_buf())[1]
+  eq(mark.text,'◆'); eq(mark.hl,'BreakpointsMuted')
   vim.api.nvim_win_set_cursor(0,{1,0}); key('\\dT')
   key('\\dT'); eq(focused,1)
 end)

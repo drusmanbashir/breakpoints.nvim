@@ -48,12 +48,17 @@ function M.log_point()
   end)
 end
 
-function M.setup()
-  if ready then return end
-  ready = true
-  for name, link in pairs({ BreakpointsBreakpoint = "DiagnosticError", BreakpointsLogPoint = "Function", BreakpointsMuted = "Comment" }) do
-    vim.api.nvim_set_hl(0, name, { default = true, link = link })
+function M.setup(opts)
+  if ready and not opts then return end
+  record.signs = vim.tbl_deep_extend("force", record.signs, opts and opts.signs or {})
+  for name, kind in pairs({ BreakpointsBreakpoint = "breakpoint", BreakpointsLogPoint = "log_point", BreakpointsMuted = "muted" }) do
+    local color = record.signs[kind].color
+    local highlight = color:sub(1, 1) == "#" and { fg = color } or { link = color }
+    highlight.default = opts == nil
+    vim.api.nvim_set_hl(0, name, highlight)
   end
+  if ready then return M.redraw() end
+  ready = true
   setup_store()
   require("breakpoints.ui.gutter_hover").install()
   local function map(lhs, action, desc)

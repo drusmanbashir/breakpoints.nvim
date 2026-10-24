@@ -2,12 +2,26 @@
 
 Saved editor breakpoints and log points, independent of a debugger. Add this directory to Neovim's runtime path and call `require("breakpoints").setup()`; the plugin entrypoint also calls setup once. No nvim-dap or dap-sidecar dependency.
 
-Normal-mode keys: F2, leader dt and Ctrl-F8/F32 toggle a breakpoint; F3 prompts for a log message or removes a log point. Shift-F2/F14 clears both kinds in the current file. Leader dT opens properties; Ctrl-Shift-F8/F44 are silent aliases. Both kinds draw ●: `BreakpointsBreakpoint` links to `DiagnosticError`, `BreakpointsLogPoint` to `Function`, and `BreakpointsMuted` to `Comment`.
+Normal-mode keys: F2, leader dt and Ctrl-F8/F32 toggle a breakpoint; F3 prompts for a log message or removes a log point. Shift-F2/F14 clears both kinds in the current file. Leader dT opens properties; Ctrl-Shift-F8/F44 are silent aliases. Defaults are red ● breakpoints and red ◆ log points: `BreakpointsBreakpoint` and `BreakpointsLogPoint` link to `DiagnosticError`; `BreakpointsMuted` links to `Comment` and keeps the kind’s icon.
+
+Pass a slim signs table to `setup(opts)`; defaults are:
+
+```lua
+require("breakpoints").setup({
+  signs = {
+    breakpoint = { text = "●", color = "DiagnosticError" },
+    log_point = { text = "◆", color = "DiagnosticError" },
+    muted = { color = "Comment" },
+  },
+})
+```
+
+`color` is a highlight group name (linked) or `#rrggbb` (foreground). Partial options keep the other current values. The entrypoint may auto-setup first; a later `setup(opts)` reapplies signs/colours and redraws loaded buffers. Mappings and autocmds install once.
 
 Storage: `stdpath("state")/breakpoints/<language>/breakpoints.json`. Filetype chooses the folder (`c` → `cpp`, otherwise `other`); project roots form the nested buckets. Setup copies the old `dap-sidecar/*/breakpoints.json` folders only when `breakpoints/` is absent, under the store lock, leaving the old folders intact. Existing destinations are never overwritten. Mutations and save merges hold `breakpoints/breakpoints.json.flock`; writes use temporary files and atomic renames.
 
 `require("breakpoints")` exposes `toggle(path, line, props?)`, `toggle_at(buf, row, props?)`, `update(id, props)`, `remove_by_id(id)`, `clear(path)`, `clear_buffer(buf)`, `clear_project(root?)`, `clear_all()`, `find_at(path, line)`, `get(path)` and `all()`. `all()` returns a read-only disk snapshot, nested by project then absolute file path, plus an unreadable-file reason when needed; it does not install editor hooks. Every committed change publishes `User BreakpointsChanged` with `data = { path, lines }`; `lines` contains full saved entries, including IDs. Recovery publishes the corrected committed entries.
 
-A sidecar can attach once with `attach({ style, validate, focus_list })`. `style(path, entry)` returns `{ text, hl, note? }` or nil for default styling. `validate(language, props)` returns a refusal or nil; language is the plugin's folder language. `focus_list()` handles properties without a breakpoint and saves before switching from the properties box. Without a host, the first case says "No breakpoint on this line" and the box key only saves. `redraw()` refreshes all loaded buffers. Sign owners share `require("breakpoints.ui.gutter_hover").register(namespace_name, describe)`.
+A sidecar can attach once with `attach({ style, validate, focus_list })`. `style(path, entry)` returns optional `{ text, hl, note }` fields merged over default styling, or nil. A muted host supplies only `hl` and `note` so each kind keeps its configured icon. `validate(language, props)` returns a refusal or nil; language is the plugin's folder language. `focus_list()` handles properties without a breakpoint and saves before switching from the properties box. Without a host, the first case says "No breakpoint on this line" and the box key only saves. `redraw()` refreshes all loaded buffers. Sign owners share `require("breakpoints.ui.gutter_hover").register(namespace_name, describe)`.
 
 G1: `tests/breakpoints_test.lua` runs headless with only this plugin added to the runtime path. Set `BP_TEST_ROOT`, private XDG state/data/cache roots and run `nvim-codex --clean --headless -u NONE -l tests/breakpoints_test.lua` under a 60-second timeout. Use fresh private roots for each run; `BP_TEST_CASE=existing` proves destination preservation and `BP_TEST_CASE=copy-failure` proves one migration refusal. Real terminal keys, pixels and debugger integration are checked by dap-sidecar's `gutter-hover` and `python-journey` acceptance rows.

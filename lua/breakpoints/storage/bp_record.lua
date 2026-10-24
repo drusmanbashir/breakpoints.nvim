@@ -1,5 +1,10 @@
 -- The breakpoint record: entry shape, hit-count grammar and property refusals.
 local M = {}
+M.signs = {
+	breakpoint = { text = "●", color = "DiagnosticError" },
+	log_point = { text = "◆", color = "DiagnosticError" },
+	muted = { color = "Comment" },
+}
 
 local uv = vim.uv or vim.loop
 
@@ -92,7 +97,7 @@ end
 
 -- Saved intent only: a log point never stops, so it alone looks different; properties show on hover.
 function M.glyph(entry)
-	return "●"
+	return M.signs[entry.log_message and "log_point" or "breakpoint"].text
 end
 
 function M.say(text, level)

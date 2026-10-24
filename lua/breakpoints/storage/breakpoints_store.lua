@@ -137,7 +137,7 @@ end
 
 local function style_for(path, entry)
 	local style = host and host.style and host.style(path, entry)
-	return style or { text = record.glyph(entry), hl = entry.log_message and "BreakpointsLogPoint" or "BreakpointsBreakpoint" }
+	return vim.tbl_extend("force", { text = record.glyph(entry), hl = entry.log_message and "BreakpointsLogPoint" or "BreakpointsBreakpoint" }, style or {})
 end
 
 -- Reconciles a buffer's marks with the stored entries by id.
