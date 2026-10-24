@@ -10,6 +10,7 @@ local space = require("breakpoints.storage.bp_space")
 local state = {}
 local setup_done = false
 local host
+local renamed = {}
 
 local file = require("breakpoints.storage.bp_file")
 local state_dir = file.state_dir
@@ -60,8 +61,8 @@ local function refresh()
 end
 
 local function source_gone(path)
-	local buf = vim.fn.bufnr(path, false)
-	if buf >= 0 and vim.api.nvim_buf_is_loaded(buf) then return false end
+	local buf = renamed[path]
+	if buf and vim.api.nvim_buf_is_loaded(buf) then return false end
 	local _, _, code = uv.fs_stat(path)
 	return code == "ENOENT" or code == "ENOTDIR"
 end
@@ -279,6 +280,7 @@ local function on_rename(bufnr, from)
 	if moved then
 		local saved, err = persist({ from, to })
 		if not saved then return err end
+		renamed[from], renamed[to] = nil, bufnr
 	end
 	draw_buffer(bufnr)
 	if not moved then return end
@@ -304,6 +306,9 @@ function M.setup()
 		group = autocmd_group,
 		callback = function(args)
 			marks.drop_buffer(args.buf)
+			for path, buf in pairs(renamed) do
+				if buf == args.buf then renamed[path] = nil end
+			end
 		end,
 	})
 	vim.api.nvim_create_autocmd("BufReadPost", {
@@ -316,6 +321,8 @@ function M.setup()
 	vim.api.nvim_create_autocmd("BufWritePost", {
 		group = autocmd_group,
 		callback = function(args)
+			local path = path_for_buffer(args.buf)
+			if path then renamed[path] = nil end
 			file.with_lock(function() on_write(args.buf) end)
 		end,
 	})

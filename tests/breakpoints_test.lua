@@ -128,6 +128,12 @@ check('failed prune keeps committed event payload',function()
   eq(events,{{path=gone,lines=saved}})
   bp.get(path); eq(events[#events],{path=gone,lines={}})
 end)
+check('external removal prunes a loaded source',function()
+  local gone=area..'/external.py'; vim.fn.writefile({'a=1'},gone)
+  vim.cmd.edit(gone); bp.toggle(gone,1); vim.fn.delete(gone); events={}
+  eq(#bp.get(gone),0); eq(events[#events],{path=gone,lines={}})
+  vim.cmd.edit(path)
+end)
 check('rename moves IDs and events',function()
   bp.toggle(path,1); local id=bp.get(path)[1].id
   local renamed=area..'/renamed.py'; events={}
