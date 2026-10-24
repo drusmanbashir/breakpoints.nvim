@@ -90,7 +90,7 @@ local function prune_missing()
 	end
 	refresh()
 	prune()
-	persist()
+	if not persist(vim.tbl_keys(pruned)) then return false end
 	for path in pairs(pruned) do
 		vim.api.nvim_exec_autocmds("User", { pattern = "BreakpointsChanged", data = { path = path, lines = {} } })
 	end

@@ -107,6 +107,27 @@ check('public removal repaints',function()
   bp.toggle(path,1); local id=bp.get(path)[1].id; assert(bp.remove_by_id(id))
   eq(require('breakpoints.breakpoints.bp_marks').list(buf),{})
 end)
+check('failed mutation publishes committed recovery',function()
+  bp.toggle(path,1); local saved=bp.get(path)
+  local file=require('breakpoints.storage.bp_file'); local persist=file.persist
+  events={}; local before=#notices
+  file.persist=function() return nil,'injected write failure' end
+  vim.api.nvim_win_set_cursor(0,{2,0}); key('<F2>')
+  file.persist=persist
+  eq(bp.get(path),saved); eq(events,{{path=path,lines=saved}}); eq(#notices,before+1)
+  eq(#require('breakpoints.breakpoints.bp_marks').list(buf),1)
+  bp.clear(path)
+end)
+check('failed prune keeps committed event payload',function()
+  local gone=area..'/gone.py'; vim.fn.writefile({'a=1'},gone); bp.toggle(gone,1)
+  local saved=bp.get(gone); vim.fn.delete(gone)
+  local file=require('breakpoints.storage.bp_file'); local persist=file.persist
+  events={}; file.persist=function() return nil,'injected prune failure' end
+  bp.get(path)
+  file.persist=persist
+  eq(events,{{path=gone,lines=saved}})
+  bp.get(path); eq(events[#events],{path=gone,lines={}})
+end)
 check('rename moves IDs and events',function()
   bp.toggle(path,1); local id=bp.get(path)[1].id
   local renamed=area..'/renamed.py'; events={}
