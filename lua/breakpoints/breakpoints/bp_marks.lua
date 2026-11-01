@@ -97,9 +97,29 @@ function M.at(bufnr, row1)
 	end
 end
 
+-- The sign on the line a breakpoint really stops on, when that is not the line it was set on.
+M.LANDING_NS_NAME = "BreakpointsLanding"
+local landing_ns = vim.api.nvim_create_namespace(M.LANDING_NS_NAME)
+
+---@param rows table<integer, table> line -> style
+function M.set_landings(bufnr, rows)
+	vim.api.nvim_buf_clear_namespace(bufnr, landing_ns, 0, -1)
+	for row1, style in pairs(rows) do
+		if row1 <= line_count(bufnr) then
+			vim.api.nvim_buf_set_extmark(bufnr, landing_ns, row1 - 1, 0, {
+				sign_text = style.text,
+				sign_hl_group = style.hl,
+				priority = PRIORITY,
+				invalidate = true,
+			})
+		end
+	end
+end
+
 function M.drop_buffer(bufnr)
 	if vim.api.nvim_buf_is_valid(bufnr) then
 		pcall(vim.api.nvim_buf_clear_namespace, bufnr, ns, 0, -1)
+		pcall(vim.api.nvim_buf_clear_namespace, bufnr, landing_ns, 0, -1)
 	end
 	marks[bufnr] = nil
 end

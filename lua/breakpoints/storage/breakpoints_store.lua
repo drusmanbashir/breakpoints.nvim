@@ -135,9 +135,25 @@ local function path_for_buffer(bufnr)
 	return absolute(path) and vim.fn.fnamemodify(path, ":p") or nil
 end
 
-local function style_for(path, entry)
+local function plain_style(path, entry)
 	local style = host and host.style and host.style(path, entry)
 	return vim.tbl_extend("force", { text = record.glyph(entry), hl = entry.log_message and "BreakpointsLogPoint" or "BreakpointsBreakpoint" }, style or {})
+end
+
+-- Where a debugger says a breakpoint really stops, when that is not where it was set: path -> entry id -> line.
+-- Display only: the store keeps the line the breakpoint was set on, so a later build can resolve it afresh.
+local landings = {}
+
+local function style_for(path, entry)
+	local style = plain_style(path, entry)
+	local landing = landings[path] and landings[path][entry.id]
+	if not landing then
+		return style
+	end
+	return vim.tbl_extend("force", style, {
+		text = "○",
+		note = ("Stops on line %d: this line has no code."):format(landing),
+	})
 end
 
 -- Reconciles a buffer's marks with the stored entries by id.
@@ -167,6 +183,17 @@ local function draw_buffer(bufnr)
 	for id, entry in pairs(wanted) do
 		marks.place(bufnr, id, entry.line, style_for(path, entry))
 	end
+	local stored, rows = {}, {}
+	for _, entry in ipairs(path and entries_for(path) or {}) do
+		stored[entry.line] = true
+	end
+	for _, entry in ipairs(path and entries_for(path) or {}) do
+		local landing = landings[path] and landings[path][entry.id]
+		if landing and not stored[landing] then
+			rows[landing] = plain_style(path, entry)
+		end
+	end
+	marks.set_landings(bufnr, rows)
 end
 
 local function draw_all()
@@ -300,6 +327,7 @@ function M.setup()
 	end)
 	if not ok then vim.notify("breakpoint store copy/setup failed: " .. tostring(err), vim.log.levels.ERROR) end
 	require("breakpoints.ui.gutter_hover").register(marks.NS_NAME, M.describe)
+	require("breakpoints.ui.gutter_hover").register(marks.LANDING_NS_NAME, M.describe)
 	local autocmd_group = vim.api.nvim_create_augroup("BreakpointsStore", { clear = true })
 	-- A re-read starts from stored lines.
 	vim.api.nvim_create_autocmd({ "BufReadPre", "BufUnload" }, {
@@ -472,13 +500,51 @@ end
 
 -- Removes a mark on the row by id; otherwise stores a new breakpoint now, saved buffer or not.
 ---@return string|nil action, string|nil error
+---The breakpoint that really stops on this line, when none is drawn here.
+local function landing_owner(path, row)
+	for _, entry in ipairs(entries_for(path)) do
+		if landings[path] and landings[path][entry.id] == row then
+			return entry
+		end
+	end
+end
+
+---A debugger reports where breakpoints really stop.
+---@param moved table[] { line = the line it was set on, landing = the line it stops on }
+function M.set_landings(path, moved)
+	M.setup()
+	local by_line, by_id = {}, nil
+	for _, item in ipairs(moved or {}) do
+		by_line[item.line] = item.landing
+	end
+	for _, entry in ipairs(entries_for(path)) do
+		if by_line[entry.line] then
+			by_id = by_id or {}
+			by_id[entry.id] = by_line[entry.line]
+		end
+	end
+	landings[path] = by_id
+	local bufnr = vim.fn.bufnr(path, false)
+	if bufnr >= 0 then
+		draw_buffer(bufnr)
+	end
+	return true
+end
+
+function M.clear_landings()
+	if next(landings) then
+		landings = {}
+		draw_all()
+	end
+end
+
 function M.toggle_at(bufnr, row, opts)
 	M.setup()
 	local path = path_for_buffer(bufnr)
 	if not path then
 		return nil, "unnamed buffer has no absolute path"
 	end
-	local mark = marks.at(bufnr, row)
+	local mark = marks.at(bufnr, row) or landing_owner(path, row)
 	if mark then
 		local removed, _, err = M.remove_by_id(mark.id)
 		if removed == nil then
@@ -489,11 +555,16 @@ function M.toggle_at(bufnr, row, opts)
 		end
 		return "cleared", err
 	end
+	-- The host can name the line a breakpoint set here really belongs on; one already there stays.
+	local target = host and host.place_line and host.place_line(path, bufnr, row) or row
+	if target ~= row and marks.at(bufnr, target) then
+		return "kept"
+	end
 	-- Edits may have moved marks off their stored lines; store where they are drawn before toggling by line.
 	if vim.bo[bufnr].modified then
 		file.with_lock(function() on_write(bufnr) end)
 	end
-	return M.toggle(path, row, opts)
+	return M.toggle(path, target, opts)
 end
 
 -- Removes every breakpoint drawn in the buffer through the file-level clear.
@@ -593,10 +664,11 @@ end
 --- Gutter tooltip for the breakpoint drawn on the row: what it does, its properties, and why it may not stop.
 function M.describe(bufnr, row)
 	local mark = marks.at(bufnr, row)
-	if not mark then
-		return nil
-	end
 	local path = path_for_buffer(bufnr)
+	if not mark then
+		local owner = path and landing_owner(path, row)
+		return owner and { ("Breakpoint set on line %d stops here."):format(owner.line) } or nil
+	end
 	local entry = {}
 	for _, item in ipairs(path and entries_for(path) or {}) do
 		if item.id == mark.id then

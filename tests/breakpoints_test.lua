@@ -193,5 +193,32 @@ check('attached validation uses folder language and host style',function()
   vim.api.nvim_win_set_cursor(0,{1,0}); key('\\dT')
   key('\\dT'); eq(focused,1)
 end)
+check('a moved breakpoint shows where it really stops and F2 there removes it', function()
+  local bp=require('breakpoints')
+  local marks=require('breakpoints.breakpoints.bp_marks')
+  local moved=area..'/moved.py'
+  vim.fn.writefile({'a = 1','','b = 2','c = 3'},moved)
+  vim.cmd.edit(moved)
+  local buf=vim.api.nvim_get_current_buf()
+  local landing=function()
+    local found={}
+    for _,sign in ipairs(vim.api.nvim_buf_get_extmarks(buf,vim.api.nvim_get_namespaces()[marks.LANDING_NS_NAME],0,-1,{details=true})) do
+      found[#found+1]=sign[2]+1
+    end
+    return found
+  end
+  bp.toggle(moved,2)
+  local plain=marks.list(buf)[1].text
+  bp.set_landings(moved,{{line=2,landing=3}})
+  eq(marks.list(buf)[1].row,2); eq(marks.list(buf)[1].text,'○'); eq(landing(),{3})
+  eq(bp.get(moved)[1].line,2)
+  assert(vim.tbl_contains(bp.describe(buf,2),'Stops on line 3: this line has no code.'))
+  eq(bp.describe(buf,3),{'Breakpoint set on line 2 stops here.'})
+  bp.toggle(moved,3); eq(landing(),{})
+  bp.toggle(moved,3); eq(landing(),{3})
+  bp.toggle_at(buf,3); eq(#bp.get(moved),0); eq(landing(),{})
+  bp.toggle(moved,2); bp.set_landings(moved,{{line=2,landing=3}}); bp.clear_landings()
+  eq(marks.list(buf)[1].text,plain); eq(landing(),{})
+end)
 print('PASS G1 breakpoints_test')
 vim.cmd('qa!')

@@ -62,6 +62,8 @@ Use `local bp = require("breakpoints")`. Paths are absolute and line numbers are
 | `get(path)`, `find_at(path, line)` | Return the file's entries or the entry drawn on a line. |
 | `all()` | Return a read-only disk snapshot shaped as `snapshot[project][path] = entries`, plus an unreadable-file reason when needed. |
 | `redraw()` | Repaint every loaded buffer using the current configuration and host styling. |
+| `set_landings(path, moved)` | A debugger reports `{ line, landing }` pairs: where breakpoints set on `line` really stop. Shows a hollow sign on `line` and the normal sign on `landing`; F2 on either removes the breakpoint. The stored line never changes. |
+| `clear_landings()` | Forget every reported landing, for when a debug session ends. |
 
 Committed changes emit `User BreakpointsChanged` with `data = { path, lines }`. `lines` contains the complete saved entries for that path, including IDs, and is empty after clearing the file. Integrations can forward this payload to their debugger:
 
@@ -80,6 +82,7 @@ vim.api.nvim_create_autocmd("User", {
 |---|---|
 | `style(path, entry)` | Return optional `{ text, hl, note }` fields merged over the configured style, or nil. To mute a mark, return `{ hl = "BreakpointsMuted", note = "Muted" }` so its icon is retained. |
 | `validate(language, props)` | Return a refusal string or nil when validating property updates. `language` is the storage folder name, including `cpp` for C. |
+| `place_line(path, bufnr, row)` | Return the line a breakpoint set on `row` belongs on, for a language that cannot stop there. Called only when no breakpoint is drawn on `row`; a breakpoint already on the returned line is kept. |
 | `focus_list()` | Focus the debugger's breakpoint list. The properties key saves before switching from the box to this list. |
 
 After changing host state, call `bp.redraw()`. Without a host, the plugin uses its default styling and the properties key inside the box only saves. Other sign owners can register tooltip text with `require("breakpoints.ui.gutter_hover").register(namespace_name, describe)`, where `describe(buf, line)` returns a list of tooltip lines or nil.
