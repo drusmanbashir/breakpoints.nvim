@@ -11,6 +11,73 @@ vim.opt.rtp:prepend(root)
 vim.g.mapleader = '\\'
 local area = vim.fn.stdpath('state') .. '/fixture'
 vim.fn.mkdir(area, 'p')
+local test_case = vim.env.BP_TEST_CASE
+if test_case == 'startup-refile' or test_case == 'startup-duplicate' then
+  local project = area .. '/project'
+  local destination = vim.fn.stdpath('state') .. '/breakpoints/python'
+  local function init_repo(dir)
+    local result = vim.system({'git', 'init', '--quiet', dir}):wait()
+    assert(result.code == 0, result.stderr)
+  end
+  vim.fn.mkdir(destination, 'p')
+  init_repo(project)
+  local files = {}
+  local function source(i)
+    return project .. '/dir' .. i .. '/sample.py'
+  end
+  for i = 1, 21 do
+    local file = source(i)
+    vim.fn.mkdir(vim.fs.dirname(file), 'p')
+    vim.fn.writefile({'x = 1'}, file)
+    files[file] = {{id = 'saved-' .. i, line = 1}}
+  end
+  local initial = {['<no-project>'] = files}
+  if test_case == 'startup-duplicate' then
+    initial[project] = {[source(1)] = {{id = 'saved-1', line = 1, condition = 'from-project'}}}
+  end
+  local saved = destination .. '/breakpoints.json'
+  vim.fn.writefile({vim.json.encode(initial)}, saved)
+
+  local bp = require('breakpoints')
+  local systemlist = vim.fn.systemlist
+  local git_calls = 0
+  vim.fn.systemlist = function(cmd, ...)
+    if type(cmd) == 'table' and cmd[1] == 'git' and cmd[4] == 'rev-parse' then
+      git_calls = git_calls + 1
+    end
+    return systemlist(cmd, ...)
+  end
+  local started = vim.uv.hrtime()
+  bp.setup()
+  local elapsed = (vim.uv.hrtime() - started) / 1e6
+  vim.fn.systemlist = systemlist
+  print(('P1 startup Git calls=%d setup=%.2f ms'):format(git_calls, elapsed))
+
+  if test_case == 'startup-duplicate' then
+    check('startup keeps the canonical copy of a duplicated breakpoint', function()
+      local entries = bp.get(source(1))
+      eq(#entries, 1)
+      eq(entries[1].condition, 'from-project')
+    end)
+  else
+    -- PURPOSE: startup forks Git for each saved directory despite already having unique entries.
+    check('startup does not fork Git for unique saved breakpoints', function()
+      assert(git_calls == 0, ('setup forked Git %d times'):format(git_calls))
+      eq(bp.get(source(1))[1].id, 'saved-1')
+    end)
+    check('first project mutation uses current nearest Git root', function()
+      local nested = vim.fs.dirname(source(21))
+      init_repo(nested)
+      assert(bp.clear_project(project))
+      eq(bp.get(source(1)), {})
+      eq(bp.get(source(21))[1].id, 'saved-21')
+      local stored = vim.json.decode(table.concat(vim.fn.readfile(saved), '\n'))
+      eq(vim.tbl_keys(stored), {nested})
+    end)
+  end
+  vim.cmd('qa!')
+  return
+end
 local path = area .. '/sample.py'
 vim.fn.writefile({'a = 1', 'b = 2', 'print(a + b)'}, path)
 local notices = {}
