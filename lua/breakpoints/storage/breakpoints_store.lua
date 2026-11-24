@@ -98,6 +98,21 @@ local function prune_missing()
 	return true
 end
 
+-- Startup draws by path. Refreshed Git buckets are only needed to merge duplicate paths or write migrated IDs.
+local function needs_startup_refile(store)
+	local seen = {}
+	for _, bucket in pairs(store) do
+		for path, entries in pairs(bucket) do
+			if seen[path] then return true end
+			seen[path] = true
+			for _, entry in ipairs(entries) do
+				if not entry.id then return true end
+			end
+		end
+	end
+	return false
+end
+
 local function load()
 	local nested, unread, where = read_file()
 	if unread == "missing" then
@@ -108,7 +123,7 @@ local function load()
 		return
 	end
 	state = nested
-	space.refile(state)
+	if needs_startup_refile(state) then space.refile(state) end
 	-- Assign ids before any other write.
 	if assign_ids(state) then
 		persist()
