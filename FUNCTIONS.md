@@ -21,4 +21,4 @@ Scope: `lua/`, `plugin/`, `tests/`
 
 ## Tests
 
-- `tests/breakpoints_test.lua`: G1 headless integration of the standalone public API, mappings, store, migration, rename, save merge and event payloads; private XDG required. Optional `BP_TEST_CASE=existing|copy-failure` selects migration boundaries.
+- `tests/breakpoints_test.lua`: G1 headless integration of the standalone public API, mappings, store, migration, rename, save merge and event payloads. Requires private XDG. `BP_TEST_CASE=existing|copy-failure` selects migration boundaries. `startup-refile` measures setup with 21 saved directories and checks project mutation. `startup-duplicate` checks canonical duplicate merging during setup.
